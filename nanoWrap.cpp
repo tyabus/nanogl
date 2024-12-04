@@ -417,14 +417,19 @@ void GL_MANGLE(glEnd)( void )
 	{
 	case GL_QUADS:
 	{
-		*ptrIndexArray++ = indexCount;
-		*ptrIndexArray++ = indexCount + 1;
-		*ptrIndexArray++ = indexCount + 2;
-		*ptrIndexArray++ = indexCount;
-		*ptrIndexArray++ = indexCount + 2;
-		*ptrIndexArray++ = indexCount + 3;
-		indexCount += 4;
-		vertexCount += 2;
+		int qcount = ( vertexCount - vertexMark ) / 4;
+
+		for ( int count = 0; count < qcount; count++ )
+		{
+			*ptrIndexArray++ = indexCount;
+			*ptrIndexArray++ = indexCount + 1;
+			*ptrIndexArray++ = indexCount + 2;
+			*ptrIndexArray++ = indexCount;
+			*ptrIndexArray++ = indexCount + 2;
+			*ptrIndexArray++ = indexCount + 3;
+			indexCount += 4;
+			vertexCount += 2;
+		}
 	}
 	break;
 	case GL_TRIANGLES:
@@ -1187,6 +1192,10 @@ void GL_MANGLE(glColor4f)( GLfloat red, GLfloat green, GLfloat blue, GLfloat alp
 	currentVertexAttrib.green = (unsigned char)ClampTo255( green * 255.0f );
 	currentVertexAttrib.blue  = (unsigned char)ClampTo255( blue * 255.0f );
 	currentVertexAttrib.alpha = (unsigned char)ClampTo255( alpha * 255.0f );
+	if( skipnanogl )
+		glEsImpl->glColor4f( currentVertexAttrib.red/255.0f, currentVertexAttrib.green/255.0f,
+			 currentVertexAttrib.blue/255.0f, currentVertexAttrib.alpha/255.0f );
+
 }
 
 void GL_MANGLE(glOrtho)( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar )
@@ -1646,6 +1655,7 @@ void GL_MANGLE(glBindTexture)( GLenum target, GLuint texture )
 	if( skipnanogl )
 	{
 		glEsImpl->glBindTexture( target,texture );
+		activetmuState->boundtexture.value = texture;
 		return;
 	}
 	if ( activetmuState->boundtexture.value == texture )
@@ -2358,6 +2368,18 @@ void GL_MANGLE(glTexEnvi)( GLenum target, GLenum pname, GLint param )
 	glEsImpl->glTexEnvi( target, pname, param );
 }
 
+void GL_MANGLE(glTexEnvfv)( GLenum target, GLenum pname, const GLfloat *param )
+{
+	if( skipnanogl )
+	{
+		glEsImpl->glTexEnvfv( target, pname, param );
+		return;
+	}
+
+	FlushOnStateChange( );
+	glEsImpl->glTexEnvfv( target, pname, param );
+}
+
 void GL_MANGLE(glDrawArrays)( GLenum mode, GLint first, GLsizei count )
 {
 	if( skipnanogl )
@@ -2540,11 +2562,25 @@ void GL_MANGLE(glBindBufferARB)( GLuint target, GLuint index )
 	glEsImpl->glColor4f( currentVertexAttrib.red/255.0f, currentVertexAttrib.green/255.0f,
 		 currentVertexAttrib.blue/255.0f, currentVertexAttrib.alpha/255.0f );
 
-	skipnanogl = (!!index) || vboarray;
+	if( target == 0x8892 )
+	{
+		skipnanogl = (!!index) || vboarray;
+
+	}
 	glEsImpl->glBindBuffer( target, index );
 	if( sindex && !index )
 	{
 		arraysValid = GL_FALSE;
+		if(!skipnanogl)
+		{
+			glEsImpl->glEnableClientState( GL_COLOR_ARRAY );
+			tmuState0.color_array.changed = 1;
+			tmuState1.color_array.changed = 1;
+			tmuState0.texture_coord_array.changed = 1;
+			tmuState1.texture_coord_array.changed = 1;
+			arraysValid = 0;
+			ResetNanoState( );
+		}
 	}
 	sindex = index;
 }
@@ -2561,6 +2597,8 @@ void GL_MANGLE(glDeleteBuffersARB)( GLuint count, GLuint *indexes )
 
 void GL_MANGLE(glBufferDataARB)( GLuint target, GLuint size, void *buffer, GLuint type )
 {
+	if(type == 0x88E0)
+		type = 0x88E8;
 	glEsImpl->glBufferData( target, size, buffer, type );
 }
 
